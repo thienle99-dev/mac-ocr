@@ -15,7 +15,7 @@ struct Box: Encodable {
 
 struct OCRLine: Encodable {
     let text: String
-    let confidence: Float
+    let confidence: Float?
     let box: Box
 }
 
@@ -79,6 +79,7 @@ struct OCRPage: Encodable {
     let width: Int
     let height: Int
     let text: String
+    let source: String
     let lines: [OCRLine]
 }
 
@@ -162,6 +163,73 @@ func render(_ page: PDFPage) throws -> CGImage {
     return image
 }
 
+func embeddedPDFText(_ page: PDFPage, pixels: Bool) -> (text: String, lines: [OCRLine])? {
+    guard let text = page.string,
+          text.unicodeScalars.contains(where: CharacterSet.alphanumerics.contains),
+          let selection = page.selection(for: page.bounds(for: .mediaBox)) else { return nil }
+
+    let bounds = page.bounds(for: .mediaBox)
+    guard bounds.width > 0, bounds.height > 0 else { return nil }
+    let width = Int(ceil(bounds.width * 2))
+    let height = Int(ceil(bounds.height * 2))
+    let lines = selection.selectionsByLine().compactMap { item -> OCRLine? in
+        guard let value = item.string?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        let rect = item.bounds(for: page)
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        let x = (rect.minX - bounds.minX) / bounds.width
+        let y = (rect.minY - bounds.minY) / bounds.height
+        let w = rect.width / bounds.width
+        let h = rect.height / bounds.height
+        let box = pixels
+            ? Box(x: x * CGFloat(width), y: (1 - y - h) * CGFloat(height), width: w * CGFloat(width), height: h * CGFloat(height))
+            : Box(x: x, y: y, width: w, height: h)
+        return OCRLine(text: value, confidence: nil, box: box)
+    }
+    guard !lines.isEmpty else { return nil }
+    return (text, lines)
+}
+
+func pdfReadingOrder(_ lines: [OCRLine], pixels: Bool, width: Int, height: Int) -> [OCRLine] {
+    guard lines.count >= 7 else { return lines }
+
+    func geometry(_ line: OCRLine) -> (top: CGFloat, center: CGFloat, height: CGFloat, x: CGFloat) {
+        let box = line.box
+        let normalizedHeight = pixels ? box.height / CGFloat(max(height, 1)) : box.height
+        let top = pixels ? box.y / CGFloat(max(height, 1)) : 1 - box.y - box.height
+        let x = pixels ? box.x / CGFloat(max(width, 1)) : box.x
+        return (top, top + normalizedHeight / 2, normalizedHeight, x)
+    }
+
+    let ordered = lines.sorted { geometry($0).center < geometry($1).center }
+    var rows: [[OCRLine]] = []
+    for line in ordered {
+        let current = geometry(line)
+        if let last = rows.indices.last {
+            let previous = rows[last].map(geometry)
+            let center = previous.map(\.center).reduce(0, +) / CGFloat(previous.count)
+            let height = max(current.height, previous.map(\.height).max() ?? current.height)
+            if abs(current.center - center) <= max(0.004, height * 0.55) {
+                rows[last].append(line)
+                continue
+            }
+        }
+        rows.append([line])
+    }
+
+    let multiLineRows = rows.filter { $0.count >= 2 }.count
+    let xPositions = lines.map { geometry($0).x }.sorted()
+    var xClusters: [CGFloat] = []
+    for x in xPositions {
+        if let previous = xClusters.last, abs(x - previous) < 0.035 { continue }
+        xClusters.append(x)
+    }
+    let horizontalSpan = (xPositions.last ?? 0) - (xPositions.first ?? 0)
+    // Row-wise order helps compact tables; keep Vision's order on wide pages to avoid interleaving columns.
+    guard multiLineRows >= 3, xClusters.count >= 3, horizontalSpan <= 0.65 else { return lines }
+
+    return rows.flatMap { row in row.sorted { geometry($0).x < geometry($1).x } }
+}
+
 func recognizeImageResult(_ url: URL, level: VNRequestTextRecognitionLevel, languages: [String]?, correction: Bool, pixels: Bool, capture: CaptureInfo? = nil) throws -> OCRResult {
     let lock = try acquireOCRLock(timeout: TimeInterval(ProcessInfo.processInfo.environment["MAC_OCR_QUEUE_TIMEOUT_MS"].flatMap(Int.init) ?? 60_000) / 1000)
     defer { lock.release() }
@@ -195,6 +263,7 @@ func printHelp() {
       --level <level>      accurate (default) or fast; Vietnamese uses accurate
       --format <format>    json (default) or text
       --pages <range>      PDF pages, e.g. 2 or 1-3
+      --force-ocr          Ignore selectable PDF text and run Vision OCR
       --screen             Capture the main display
       --region <rect>      Screen rectangle x,y,width,height in desktop points
       --display <index>    Capture a display index from --list-displays
@@ -329,6 +398,7 @@ do {
     var display: Int?
     var listDisplays = false
     var pageRange: ClosedRange<Int>?
+    var forceOCR = false
     var index = 1
     let args = CommandLine.arguments
 
@@ -370,6 +440,9 @@ do {
         case "--no-correction":
             correction = false
             index += 1
+        case "--force-ocr":
+            forceOCR = true
+            index += 1
         case "--screen":
             screen = true
             index += 1
@@ -380,13 +453,13 @@ do {
             listDisplays = true
             index += 1
         default:
-            guard !arg.hasPrefix("--"), positional == nil else { throw CLIError.usage("Usage: mac-ocr <image> [--lang vi-VN,en-US] [--level accurate|fast] [--format json|text] [--pages 1-3] [--screen] [--region x,y,w,h] [--display n] [--pixels] [--no-correction]") }
+            guard !arg.hasPrefix("--"), positional == nil else { throw CLIError.usage("Usage: mac-ocr <image-or-pdf> [--lang vi-VN,en-US] [--level accurate|fast] [--format json|text] [--pages 1-3] [--force-ocr] [--screen] [--region x,y,w,h] [--display n] [--pixels] [--no-correction]") }
             positional = arg
             index += 1
         }
     }
 
-    let usage = "Usage: mac-ocr <image> [--lang vi-VN,en-US] [--level accurate|fast] [--format json|text] [--pages 1-3] [--screen] [--region x,y,w,h] [--display n] [--pixels] [--no-correction]"
+    let usage = "Usage: mac-ocr <image-or-pdf> [--lang vi-VN,en-US] [--level accurate|fast] [--format json|text] [--pages 1-3] [--force-ocr] [--screen] [--region x,y,w,h] [--display n] [--pixels] [--no-correction]"
     if listDisplays {
         var count: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &count)
@@ -463,6 +536,7 @@ do {
     }
     var isDirectory: ObjCBool = false
     let isPDF = !screen && imageURL.pathExtension.lowercased() == "pdf"
+    if forceOCR && !isPDF { throw CLIError.usage("--force-ocr can only be used with a PDF") }
     if isPDF {
         guard let document = PDFDocument(url: imageURL) else { throw CLIError.invalid("Unable to open PDF: \(imageURL.path)") }
         let total = document.pageCount
@@ -474,12 +548,20 @@ do {
         for number in selected {
             // Release each page's rendered bitmap before the next one to keep memory flat on long PDFs.
             let ocrPage = try autoreleasepool { () throws -> OCRPage in
+                guard let page = document.page(at: number - 1) else { throw CLIError.invalid("Unable to read PDF page \(number)") }
+                let bounds = page.bounds(for: .mediaBox)
+                let width = Int(ceil(bounds.width * 2))
+                let height = Int(ceil(bounds.height * 2))
+                if !forceOCR, let embedded = embeddedPDFText(page, pixels: pixels) {
+                    return OCRPage(page: number, width: width, height: height, text: embedded.text, source: "pdf-text", lines: embedded.lines)
+                }
+
                 let lock = try acquireOCRLock(timeout: TimeInterval(ProcessInfo.processInfo.environment["MAC_OCR_QUEUE_TIMEOUT_MS"].flatMap(Int.init) ?? 60_000) / 1000)
                 defer { lock.release() }
-                guard let page = document.page(at: number - 1) else { throw CLIError.invalid("Unable to read PDF page \(number)") }
                 let cgImage = try render(page)
-                let lines = try recognize(cgImage, level: level, correction: correction, languages: languages, pixels: pixels)
-                return OCRPage(page: number, width: cgImage.width, height: cgImage.height, text: lines.map(\.text).joined(separator: "\n"), lines: lines)
+                let recognized = try recognize(cgImage, level: level, correction: correction, languages: languages, pixels: pixels)
+                let lines = pdfReadingOrder(recognized, pixels: pixels, width: cgImage.width, height: cgImage.height)
+                return OCRPage(page: number, width: cgImage.width, height: cgImage.height, text: lines.map(\.text).joined(separator: "\n"), source: "vision", lines: lines)
             }
             pages.append(ocrPage)
         }

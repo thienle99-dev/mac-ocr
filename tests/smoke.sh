@@ -23,7 +23,7 @@ report() {
   fi
 }
 
-if "$binary" --help >"$tmpdir/help.out" && grep -q 'USAGE' "$tmpdir/help.out" && grep -q -- '--batch' "$tmpdir/help.out"; then
+if "$binary" --help >"$tmpdir/help.out" && grep -q 'USAGE' "$tmpdir/help.out" && grep -q -- '--batch' "$tmpdir/help.out" && grep -q -- '--force-ocr' "$tmpdir/help.out"; then
   report 0 "CLI help"
 else
   report 1 "CLI help"
@@ -94,14 +94,39 @@ set +e
 "$binary" "$tmpdir/sample.pdf" --lang vi-VN,en-US >"$tmpdir/pdf.out" 2>"$tmpdir/pdf.err"
 status=$?
 set -e
-if [[ $status -eq 0 ]] && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert "Hello World 2026" in d["text"]; assert [p["page"] for p in d["pages"]] == [1]' "$tmpdir/pdf.out"; then
+if [[ $status -eq 0 ]] && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert "Hello World 2026" in d["text"]; assert [p["page"] for p in d["pages"]] == [1]; assert d["pages"][0]["source"] == "vision"' "$tmpdir/pdf.out"; then
   report 0 "PDF OCR"
 else
   report 1 "PDF OCR"
 fi
 
+swift "$root/tests/mk-text-pdf.swift" "$tmpdir/text-layer.pdf"
+"$binary" "$tmpdir/text-layer.pdf" --pixels >"$tmpdir/text-layer.out"
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=d["pages"][0]; assert p["source"] == "pdf-text"; assert "Selectable PDF text layer" in p["text"] and "$1,240.50" in p["text"]; assert p["lines"] and all("confidence" not in line for line in p["lines"]); assert all(0 <= line["box"]["x"] <= p["width"] and 0 <= line["box"]["y"] <= p["height"] for line in p["lines"])' "$tmpdir/text-layer.out"; then
+  report 0 "PDF embedded text and pixel boxes"
+else
+  report 1 "PDF embedded text and pixel boxes"
+fi
+
+"$binary" "$tmpdir/text-layer.pdf" --force-ocr --lang en-US >"$tmpdir/forced-ocr.out"
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=d["pages"][0]; assert p["source"] == "vision" and "Selectable PDF text layer" in p["text"]' "$tmpdir/forced-ocr.out"; then
+  report 0 "force Vision OCR on text PDF"
+else
+  report 1 "force Vision OCR on text PDF"
+fi
+
+swift "$root/tests/mk-table-sample.swift" "$tmpdir/table.png"
+sips -s format pdf "$tmpdir/table.png" --out "$tmpdir/table.pdf" >/dev/null
+"$binary" "$tmpdir/table.pdf" --lang en-US >"$tmpdir/table.out"
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=d["pages"][0]; assert p["source"] == "vision"; t=p["text"]; labels=["Item","Qty","Unit price","Total","USB-C Dock","2","89.95","179.90","VAT (10%)","17.99","TOTAL","197.89"]; positions=[t.index(x) for x in labels]; assert positions == sorted(positions)' "$tmpdir/table.out"; then
+  report 0 "scanned PDF table row reading order"
+else
+  report 1 "scanned PDF table row reading order"
+fi
+
 expect_error "PDF page out of range error" "$tmpdir/sample.pdf" --pages 2
 expect_error "pages on image error" "$tmpdir/sample.png" --pages 1
+expect_error "force OCR on image error" "$tmpdir/sample.png" --force-ocr
 expect_error "missing file error" "$tmpdir/missing.png"
 expect_error "unsupported language error" "$tmpdir/sample.png" --lang xx
 expect_error "non-image file error" "$tmpdir/not-image.txt"

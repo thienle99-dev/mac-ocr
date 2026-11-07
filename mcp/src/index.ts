@@ -114,19 +114,21 @@ server.registerTool('ocr_images', {
 }, async ({ paths, languages, level, pixels }) => runBatch(paths, languages, level, pixels));
 
 server.registerTool('ocr_pdf', {
-  description: 'Recognize text in a PDF using Apple Vision. Optionally select a 1-based inclusive page range such as "1-3".',
+  description: 'Read selectable text embedded in each PDF page when available, otherwise OCR the rendered page with Apple Vision. Set forceOCR to true to ignore embedded text. Optionally select a 1-based inclusive page range such as "1-3".',
   inputSchema: {
     path: z.string().min(1).describe('Path to a local PDF file'),
     pages: z.string().regex(/^\d+(-\d+)?$/).optional().describe('1-based page number or inclusive range, for example "2" or "1-3"'),
     languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"]'),
     level: z.enum(['accurate', 'fast']).optional().describe('Recognition level'),
     pixels: z.boolean().optional().describe('Use pixel boxes with top-left origin'),
+    forceOCR: z.boolean().optional().describe('Ignore selectable PDF text and run Apple Vision OCR on every selected page'),
   },
   annotations: readOnlyAnnotations,
-}, async ({ path, pages, languages, level, pixels }) => {
+}, async ({ path, pages, languages, level, pixels, forceOCR }) => {
   const args = [path, ...commonArgs(languages, level)];
   if (pages) args.push('--pages', pages);
   if (pixels) args.push('--pixels');
+  if (forceOCR) args.push('--force-ocr');
   const [first, last = first] = pages ? pages.split('-').map(Number) : [1];
   // Without `pages` the whole document is processed and its length is unknown, so allow 5x the default.
   const count = pages ? last - first + 1 : 5;

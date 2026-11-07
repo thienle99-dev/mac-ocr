@@ -87,7 +87,7 @@ make register
 This prints the Claude Code and Codex registration commands for this checkout. The manual Claude Code command is:
 
 ```sh
-claude mcp add mac-ocr -- pnpm --dir /absolute/path/to/mac-ocr/mcp start
+claude mcp add mac-ocr -- node /absolute/path/to/mac-ocr/mcp/dist/index.js
 ```
 
 Register it with Codex:

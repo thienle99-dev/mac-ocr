@@ -158,10 +158,10 @@ do {
     if screen && pageRange != nil { throw CLIError.usage("--pages can only be used with a PDF") }
     if !screen && positional == nil { throw CLIError.usage(usage) }
     var capturedURL: URL?
+    defer { if let capturedURL { try? FileManager.default.removeItem(at: capturedURL) } }
     if screen {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("png")
         capturedURL = tempURL
-        defer { try? FileManager.default.removeItem(at: tempURL) }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = ["-x", "-t", "png", tempURL.path]
@@ -187,10 +187,14 @@ do {
         let selected = pageRange.map { Array($0) } ?? (total > 0 ? Array(1...total) : [])
         var pages: [OCRPage] = []
         for number in selected {
-            guard let page = document.page(at: number - 1) else { throw CLIError.invalid("Unable to read PDF page \(number)") }
-            let cgImage = try render(page)
-            let lines = try recognize(cgImage, level: level, correction: correction, languages: languages)
-            pages.append(OCRPage(page: number, text: lines.map(\.text).joined(separator: "\n"), lines: lines))
+            // Release each page's rendered bitmap before the next one to keep memory flat on long PDFs.
+            let ocrPage = try autoreleasepool { () throws -> OCRPage in
+                guard let page = document.page(at: number - 1) else { throw CLIError.invalid("Unable to read PDF page \(number)") }
+                let cgImage = try render(page)
+                let lines = try recognize(cgImage, level: level, correction: correction, languages: languages)
+                return OCRPage(page: number, text: lines.map(\.text).joined(separator: "\n"), lines: lines)
+            }
+            pages.append(ocrPage)
         }
         let result = OCRDocumentResult(text: pages.map(\.text).joined(separator: "\n\n"), pages: pages)
         if format == "text" { print(result.text) } else {

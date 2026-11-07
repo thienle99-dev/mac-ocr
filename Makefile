@@ -22,7 +22,7 @@ clean:
 	rm -rf .build mcp/dist
 
 register:
-	@echo 'claude mcp add mac-ocr -- pnpm --dir "$(CURDIR)/mcp" start'
+	@echo 'claude mcp add mac-ocr -- node "$(CURDIR)/mcp/dist/index.js"'
 	@echo 'codex mcp add mac-ocr -- node "$(CURDIR)/mcp/dist/index.js"'
 
 help:

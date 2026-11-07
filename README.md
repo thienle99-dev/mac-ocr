@@ -4,6 +4,14 @@ Local OCR for AI agents on macOS. The CLI uses Apple Vision, and the MCP server 
 
 ## Install
 
+Install the prebuilt CLI with Homebrew:
+
+```sh
+brew install thienle99-dev/mac-ocr/mac-ocr
+```
+
+This installs the universal CLI only. To also configure Claude Code, Codex, and OpenCode with the MCP server, use the one-command installer below.
+
 Install the CLI and register the MCP server for Claude Code, Codex, and OpenCode with one command:
 
 ```sh

@@ -23,6 +23,18 @@ report() {
   fi
 }
 
+if "$binary" --help >"$tmpdir/help.out" && grep -q 'USAGE' "$tmpdir/help.out" && grep -q -- '--batch' "$tmpdir/help.out"; then
+  report 0 "CLI help"
+else
+  report 1 "CLI help"
+fi
+
+if "$binary" configure --help >"$tmpdir/configure-help.out" && grep -q 'claude|codex|opencode' "$tmpdir/configure-help.out"; then
+  report 0 "configure help"
+else
+  report 1 "configure help"
+fi
+
 set +e
 "$binary" "$tmpdir/sample.png" --lang vi-VN,en-US >"$tmpdir/json.out" 2>"$tmpdir/json.err"
 status=$?

@@ -179,13 +179,70 @@ func fail(_ message: String, code: Int32) -> Never {
     exit(code)
 }
 
+func printHelp() {
+    print("""
+    mac-ocr — local macOS OCR using Apple Vision
+
+    USAGE
+      mac-ocr <image-or-pdf> [options]
+      mac-ocr --screen [options]
+      mac-ocr --batch < input.json
+      mac-ocr --list-displays
+      mac-ocr configure [claude|codex|opencode]
+
+    OPTIONS
+      --lang <codes>       Comma-separated languages, e.g. vi-VN,en-US
+      --level <level>      accurate (default) or fast; Vietnamese uses accurate
+      --format <format>    json (default) or text
+      --pages <range>      PDF pages, e.g. 2 or 1-3
+      --screen             Capture the main display
+      --region <rect>      Screen rectangle x,y,width,height in desktop points
+      --display <index>    Capture a display index from --list-displays
+      --pixels             Return pixel boxes with top-left origin
+      --no-correction      Disable Vision language correction
+      -h, --help           Show this help
+
+    BATCH INPUT
+      JSON object on stdin with paths (1–50 image paths), and optional
+      languages, level, and pixels fields.
+
+    MORE
+      mac-ocr configure --help
+      https://github.com/thienle99-dev/mac-ocr
+    """)
+}
+
+func printConfigureHelp() {
+    print("""
+    Configure mac-ocr MCP for coding agents.
+
+    USAGE
+      mac-ocr configure [claude|codex|opencode]
+
+    With no agent specified, configures all three. Requires an installed MCP
+    bundle from make install or the curl installer, or a built checkout bundle.
+    """)
+}
+
 func runAgentCommand(_ name: String, _ arguments: [String], allowFailure: Bool = false) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = [name] + arguments
+    process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.standardOutput
     process.standardError = FileHandle.standardError
+    FileHandle.standardError.write(Data("  Running: \(([name] + arguments).joined(separator: " "))\n".utf8))
     try process.run()
+    let timeout = TimeInterval(ProcessInfo.processInfo.environment["MAC_OCR_CONFIG_TIMEOUT_MS"].flatMap(Int.init) ?? 30_000) / 1000
+    let deadline = Date().addingTimeInterval(timeout)
+    while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+    if process.isRunning {
+        kill(process.processIdentifier, SIGTERM)
+        Thread.sleep(forTimeInterval: 0.5)
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        process.waitUntilExit()
+        throw CLIError.invalid("\(name) command timed out after \(Int(timeout)) seconds")
+    }
     process.waitUntilExit()
     if process.terminationStatus != 0 && !allowFailure {
         throw CLIError.invalid("\(name) command failed with status \(process.terminationStatus)")
@@ -218,6 +275,8 @@ func configureAgents(_ requested: [String]) throws {
     let bundle = try locateMCPBundle()
     let server = bundle.server
     for agent in requested {
+        let label = agent == "claude" ? "Claude Code" : agent == "codex" ? "Codex" : "OpenCode"
+        FileHandle.standardError.write(Data("Configuring \(label) MCP...\n".utf8))
         switch agent {
         case "claude":
             try runAgentCommand("claude", ["mcp", "remove", "mac-ocr", "--scope", "user"], allowFailure: true)
@@ -229,11 +288,21 @@ func configureAgents(_ requested: [String]) throws {
             try runAgentCommand("node", [bundle.opencodeHelper.path, server.path])
         default: break
         }
+        FileHandle.standardError.write(Data("Configured \(label) MCP.\n".utf8))
     }
 }
 
 do {
-    if CommandLine.arguments.dropFirst().first == "configure" {
+    let commandArgs = Array(CommandLine.arguments.dropFirst())
+    if commandArgs.isEmpty || ["--help", "-h", "help"].contains(commandArgs[0]) {
+        printHelp()
+        exit(0)
+    }
+    if commandArgs.first == "configure" && commandArgs.dropFirst().first.map({ ["--help", "-h"].contains($0) }) == true {
+        printConfigureHelp()
+        exit(0)
+    }
+    if commandArgs.first == "configure" {
         let requested = Array(CommandLine.arguments.dropFirst(2))
         try configureAgents(requested.isEmpty ? ["claude", "codex", "opencode"] : requested)
         exit(0)

@@ -40,9 +40,13 @@ mac-ocr configure codex
 mac-ocr configure opencode
 ```
 
+Configuration runs agent commands without interactive input, shows each command before it starts, and stops a command after 30 seconds by default. Set `MAC_OCR_CONFIG_TIMEOUT_MS` to change the per-command limit.
+
 ## CLI
 
 ```sh
+mac-ocr --help
+mac-ocr configure --help
 mac-ocr ./image.png
 mac-ocr ./image.png --lang vi-VN,en-US --level accurate
 mac-ocr ./image.png --format text --no-correction

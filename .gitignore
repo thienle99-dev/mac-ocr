@@ -1,0 +1,10 @@
+.build/
+mcp/node_modules/
+mcp/dist/
+.pnpm-store/
+.swiftpm/
+.DS_Store
+*.xcodeproj/xcuserdata/
+.vscode/
+.env
+.env.*

@@ -46,24 +46,33 @@ function commonArgs(languages?: string[], level?: 'accurate' | 'fast') {
   return args;
 }
 
-server.tool(
+const readOnlyAnnotations = { readOnlyHint: true, openWorldHint: false };
+
+server.registerTool(
   'ocr_image',
-  'Recognize text in an image using Apple Vision. Use accurate (the default), especially for Vietnamese or other text with diacritics; fast may drop them (for example, "Xin chao Vièt Nam, hoc may"). Pass languages such as ["vi-VN", "en-US"] for Vietnamese and English. Output box coordinates are normalized from 0 to 1 with origin at the bottom left; confidence is from 0 to 1.',
   {
-    path: z.string().min(1).describe('Path to a local image file'),
-    languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"] for Vietnamese and English'),
-    level: z.enum(['accurate', 'fast']).optional().describe('Use accurate (default), especially for Vietnamese or text with diacritics; fast may drop diacritics'),
+    description: 'Recognize text in an image using Apple Vision. Use accurate (the default), especially for Vietnamese or other text with diacritics; fast may drop them (for example, "Xin chao Vièt Nam, hoc may"). Pass languages such as ["vi-VN", "en-US"] for Vietnamese and English. Output box coordinates are normalized from 0 to 1 with origin at the bottom left; confidence is from 0 to 1.',
+    inputSchema: {
+      path: z.string().min(1).describe('Path to a local image file'),
+      languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"] for Vietnamese and English'),
+      level: z.enum(['accurate', 'fast']).optional().describe('Use accurate (default), especially for Vietnamese or text with diacritics; fast may drop diacritics'),
+    },
+    annotations: readOnlyAnnotations,
   },
   async ({ path, languages, level }) => {
     return runOCR([path, ...commonArgs(languages, level)]);
   },
 );
 
-server.tool('ocr_pdf', 'Recognize text in a PDF using Apple Vision. Optionally select a 1-based inclusive page range such as "1-3".', {
-  path: z.string().min(1).describe('Path to a local PDF file'),
-  pages: z.string().regex(/^\d+(-\d+)?$/).optional().describe('1-based page number or inclusive range, for example "2" or "1-3"'),
-  languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"]'),
-  level: z.enum(['accurate', 'fast']).optional().describe('Recognition level'),
+server.registerTool('ocr_pdf', {
+  description: 'Recognize text in a PDF using Apple Vision. Optionally select a 1-based inclusive page range such as "1-3".',
+  inputSchema: {
+    path: z.string().min(1).describe('Path to a local PDF file'),
+    pages: z.string().regex(/^\d+(-\d+)?$/).optional().describe('1-based page number or inclusive range, for example "2" or "1-3"'),
+    languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"]'),
+    level: z.enum(['accurate', 'fast']).optional().describe('Recognition level'),
+  },
+  annotations: readOnlyAnnotations,
 }, async ({ path, pages, languages, level }) => {
   const args = [path, ...commonArgs(languages, level)];
   if (pages) args.push('--pages', pages);
@@ -73,9 +82,13 @@ server.tool('ocr_pdf', 'Recognize text in a PDF using Apple Vision. Optionally s
   return runOCR(args, timeoutConfigured ? timeout : defaultTimeout * Math.max(1, count));
 });
 
-server.tool('ocr_screen', 'Capture the main display and recognize its text. The host app needs Screen Recording permission.', {
-  languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"]'),
-  level: z.enum(['accurate', 'fast']).optional().describe('Recognition level'),
+server.registerTool('ocr_screen', {
+  description: 'Capture the main display and recognize its text. The host app needs Screen Recording permission.',
+  inputSchema: {
+    languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"]'),
+    level: z.enum(['accurate', 'fast']).optional().describe('Recognition level'),
+  },
+  annotations: readOnlyAnnotations,
 }, async ({ languages, level }) => runOCR(['--screen', ...commonArgs(languages, level)]));
 
 const transport = new StdioServerTransport();

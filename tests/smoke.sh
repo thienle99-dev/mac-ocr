@@ -33,6 +33,26 @@ else
   report 1 "JSON OCR with Vietnamese and English"
 fi
 
+"$binary" "$tmpdir/sample.png" --lang vi-VN,en-US --level fast --pixels >"$tmpdir/pixels.out"
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["width"] > 0 and d["height"] > 0; assert d["lines"] and all(0 <= line["box"]["x"] <= d["width"] and 0 <= line["box"]["y"] <= d["height"] for line in d["lines"]); assert "Việt Nam" in d["text"]' "$tmpdir/pixels.out"; then
+  report 0 "pixel coordinates and Vietnamese fast fallback"
+else
+  report 1 "pixel coordinates and Vietnamese fast fallback"
+fi
+
+printf '{"paths":["%s","%s"],"languages":["en-US"],"level":"accurate","pixels":true}' "$tmpdir/sample.png" "$tmpdir/sample.png" | "$binary" --batch >"$tmpdir/batch.out"
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert len(d["results"]) == 2 and all(x["result"]["width"] > 0 for x in d["results"])' "$tmpdir/batch.out"; then
+  report 0 "single-process batch OCR"
+else
+  report 1 "single-process batch OCR"
+fi
+
+if "$binary" --list-displays >"$tmpdir/displays.out" && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert isinstance(d,list) and all("pixelWidth" in x and "scaleX" in x for x in d)' "$tmpdir/displays.out"; then
+  report 0 "display listing"
+else
+  report 1 "display listing"
+fi
+
 set +e
 "$binary" "$tmpdir/sample.png" --format text >"$tmpdir/text.out" 2>"$tmpdir/text.err"
 status=$?

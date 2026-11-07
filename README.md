@@ -84,6 +84,8 @@ Image JSON has `text`, `width`, `height`, and `lines`. PDF JSON has `text` and `
 
 ## Accuracy and token use
 
+For screenshot UI debugging, see [the UI screenshot evaluation](docs/ui-accuracy.md): 12 Chromium screenshots covering light/dark themes, 12/14/16 px text, and real 1×/2× rendering. `accurate` with Vietnamese/English recovered 179 of 180 annotated labels exactly (89/90 at 1×, 90/90 at 2×). This is a controlled fixture with repeated content, not a benchmark of real apps or UI bug detection. OCR supplies text and geometry; use DOM/accessibility to verify element state and vision to inspect layout, clipping, icons, and colors.
+
 OCR runs locally with Apple Vision. It does not send document images to an OCR API; the OCR step itself uses no external model API tokens. The extracted text still enters the agent's context, so long documents and verbose JSON results can use tokens.
 
 A Vision-only comparison used `--force-ocr` on 11 pages from four official IRS PDFs: [Form 1040](https://www.irs.gov/pub/irs-pdf/f1040.pdf) (2025, pages 1–2), [Form W-4](https://www.irs.gov/pub/irs-pdf/fw4.pdf) (2026, pages 1, 3–4), [Schedule C](https://www.irs.gov/pub/irs-pdf/f1040sc.pdf) (2026, pages 1–2), and [Form 1040 instructions](https://www.irs.gov/pub/irs-prior/i1040gi--2025.pdf) (2025, pages 2, 4, 51, 71). The pages cover fillable forms, prose, worksheets, and dense tables. Each page was rendered at 2× resolution. Its embedded PDF text was used as the reference; the selected pages contain 8,157 reference tokens.

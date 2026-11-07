@@ -88,7 +88,7 @@ const readOnlyAnnotations = { readOnlyHint: true, openWorldHint: false };
 server.registerTool(
   'ocr_image',
   {
-    description: 'Recognize text in an image using Apple Vision. Use accurate (the default), especially for Vietnamese or other text with diacritics; fast may drop them (for example, "Xin chao Vièt Nam, hoc may"). Pass languages such as ["vi-VN", "en-US"] for Vietnamese and English. Output box coordinates are normalized from 0 to 1 with origin at the bottom left; confidence is from 0 to 1.',
+    description: 'Recognize text in an image using Apple Vision. Use accurate (the default), especially for Vietnamese or other text with diacritics; fast may drop them. Pass languages such as ["vi-VN", "en-US"] for Vietnamese and English. For UI debugging, prefer DOM/accessibility for element state; OCR supplies visible text and text boxes, not button hitboxes or proof of disabled/clipped state. Use vision for visual layout. Boxes are normalized from 0 to 1 with bottom-left origin by default; pixels=true uses image pixels with top-left origin. Map image pixels to CSS coordinates using actual screenshot dimensions and crop offsets, not devicePixelRatio alone. Confidence is from 0 to 1.',
     inputSchema: {
       path: z.string().min(1).describe('Path to a local image file'),
       languages: z.array(z.string().min(1)).optional().describe('Recognition languages, for example ["vi-VN", "en-US"] for Vietnamese and English'),

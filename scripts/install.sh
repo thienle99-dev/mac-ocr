@@ -5,7 +5,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 install_root="$HOME/.local/share/mac-ocr"
 bin_root="$HOME/.local/bin"
 
-mkdir -p "$install_root/.build" "$install_root/mcp" "$bin_root"
+mkdir -p "$install_root/.build" "$install_root/mcp" "$install_root/scripts" "$bin_root"
 if [[ -L "$install_root/.build/release" ]]; then
   rm -f "$install_root/.build/release"
 fi
@@ -13,6 +13,7 @@ mkdir -p "$install_root/.build/release"
 install -m 755 "$root/.build/release/mac-ocr" "$install_root/.build/release/mac-ocr"
 rm -rf "$install_root/mcp/dist"
 cp -R "$root/mcp/dist" "$root/mcp/package.json" "$root/mcp/pnpm-lock.yaml" "$install_root/mcp/"
+install -m 644 "$root/scripts/register-opencode.mjs" "$install_root/scripts/register-opencode.mjs"
 pnpm --dir "$install_root/mcp" install --prod --frozen-lockfile
 ln -sf "$install_root/.build/release/mac-ocr" "$bin_root/mac-ocr"
 

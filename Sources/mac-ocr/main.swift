@@ -179,7 +179,65 @@ func fail(_ message: String, code: Int32) -> Never {
     exit(code)
 }
 
+func runAgentCommand(_ name: String, _ arguments: [String], allowFailure: Bool = false) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = [name] + arguments
+    process.standardOutput = FileHandle.standardOutput
+    process.standardError = FileHandle.standardError
+    try process.run()
+    process.waitUntilExit()
+    if process.terminationStatus != 0 && !allowFailure {
+        throw CLIError.invalid("\(name) command failed with status \(process.terminationStatus)")
+    }
+}
+
+func locateMCPBundle() throws -> (server: URL, opencodeHelper: URL) {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let installedRoot = home.appendingPathComponent(".local/share/mac-ocr")
+    let installedServer = installedRoot.appendingPathComponent("mcp/dist/index.js")
+    let installedHelper = installedRoot.appendingPathComponent("scripts/register-opencode.mjs")
+    var directory = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+    while directory.path != "/" {
+        let server = directory.appendingPathComponent("mcp/dist/index.js")
+        let helper = directory.appendingPathComponent("scripts/register-opencode.mjs")
+        if FileManager.default.fileExists(atPath: server.path), FileManager.default.fileExists(atPath: helper.path) {
+            return (server, helper)
+        }
+        directory.deleteLastPathComponent()
+    }
+    if FileManager.default.fileExists(atPath: installedServer.path), FileManager.default.fileExists(atPath: installedHelper.path) {
+        return (installedServer, installedHelper)
+    }
+    throw CLIError.invalid("MCP bundle not found. Build it with `make build-mcp` or install it with `make install`.")
+}
+
+func configureAgents(_ requested: [String]) throws {
+    let allowed = ["claude", "codex", "opencode"]
+    guard requested.allSatisfy(allowed.contains) else { throw CLIError.usage("Usage: mac-ocr configure [claude|codex|opencode]") }
+    let bundle = try locateMCPBundle()
+    let server = bundle.server
+    for agent in requested {
+        switch agent {
+        case "claude":
+            try runAgentCommand("claude", ["mcp", "remove", "mac-ocr", "--scope", "user"], allowFailure: true)
+            try runAgentCommand("claude", ["mcp", "add", "--scope", "user", "mac-ocr", "--", "node", server.path])
+        case "codex":
+            try runAgentCommand("codex", ["mcp", "remove", "mac-ocr"], allowFailure: true)
+            try runAgentCommand("codex", ["mcp", "add", "mac-ocr", "--", "node", server.path])
+        case "opencode":
+            try runAgentCommand("node", [bundle.opencodeHelper.path, server.path])
+        default: break
+        }
+    }
+}
+
 do {
+    if CommandLine.arguments.dropFirst().first == "configure" {
+        let requested = Array(CommandLine.arguments.dropFirst(2))
+        try configureAgents(requested.isEmpty ? ["claude", "codex", "opencode"] : requested)
+        exit(0)
+    }
     if CommandLine.arguments.contains("--batch") {
         let inputData = FileHandle.standardInput.readDataToEndOfFile()
         let input = try JSONDecoder().decode(BatchInput.self, from: inputData)

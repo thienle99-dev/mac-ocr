@@ -7,6 +7,8 @@ Local OCR for AI agents on macOS. The Swift command line program uses Apple Visi
 - macOS 12 or later
 - Swift 6 toolchain
 - Node.js 18 or later and pnpm
+- Claude Code, Codex CLI, and OpenCode CLI for the one-command agent setup
+- `curl`, `tar`, and `make` for the `curl | sh` installer
 
 ## Build
 
@@ -42,16 +44,27 @@ bash tests/smoke.sh
 
 ## CLI
 
+The examples below use the installed command. Run `make install` or the `curl | sh` installer first, and ensure `~/.local/bin` is on `PATH`. Before installation, replace `mac-ocr` with `.build/release/mac-ocr`.
+
 ```sh
-.build/release/mac-ocr ./image.png
-.build/release/mac-ocr ./image.png --lang vi-VN,en-US --level accurate
-.build/release/mac-ocr ./image.png --format text --no-correction
-.build/release/mac-ocr ./document.pdf --pages 1-3
-.build/release/mac-ocr --screen --format text
-.build/release/mac-ocr --screen --region -1200,100,800,600 --pixels
-printf '{"paths":["./one.png","./two.png"],"languages":["vi-VN","en-US"],"pixels":true}' | .build/release/mac-ocr --batch
-.build/release/mac-ocr --list-displays
+mac-ocr ./image.png
+mac-ocr ./image.png --lang vi-VN,en-US --level accurate
+mac-ocr ./image.png --format text --no-correction
+mac-ocr ./document.pdf --pages 1-3
+mac-ocr --screen --format text
+mac-ocr --screen --region -1200,100,800,600 --pixels
+printf '{"paths":["./one.png","./two.png"],"languages":["vi-VN","en-US"],"pixels":true}' | mac-ocr --batch
+mac-ocr --list-displays
 ```
+
+From a checkout, configure MCP agents with the built CLI:
+
+```sh
+.build/release/mac-ocr configure
+.build/release/mac-ocr configure codex
+```
+
+After installation, run the same command as `mac-ocr configure`; it uses the installed MCP bundle. You can select one agent with `mac-ocr configure claude`, `mac-ocr configure codex`, or `mac-ocr configure opencode`.
 
 Options:
 
@@ -88,12 +101,12 @@ The `ocr_image`, `ocr_images`, `ocr_pdf`, and `ocr_screen` tools accept optional
 Install once for Claude Code, Codex, and OpenCode:
 
 ```sh
-make install
+curl -fsSL https://raw.githubusercontent.com/thienle99-dev/mac-ocr/main/install.sh | sh
 ```
 
-This builds the CLI and MCP server, copies them with their runtime dependencies to `~/.local/share/mac-ocr`, creates `~/.local/bin/mac-ocr`, and registers the installed MCP server with all three agents. The installation is independent of the checkout, so it keeps working if the repository is moved or removed. Ensure `~/.local/bin` is on `PATH` to call `mac-ocr` directly.
+The installer requires the GitHub repository to be public. It downloads the `main` branch to a temporary directory, builds the CLI and MCP server, then installs them with runtime dependencies to `~/.local/share/mac-ocr`. It creates `~/.local/bin/mac-ocr` and registers the installed MCP server with all three agents. The installed copy is independent of the temporary download. Ensure `~/.local/bin` is on `PATH` to call `mac-ocr` directly. You can also run `make install` from a checkout.
 
-The installer replaces any existing `mac-ocr` entry in those agents so they all point to the same installed copy. It preserves other MCP entries. Run `make install` again after changing the source to update the installed copy.
+The installer updates the `mac-ocr` registration for each agent so it points to the same installed copy, and preserves other MCP entries. Run the `curl | sh` command again to update from `main`, or run `make install` after changing a local checkout.
 
 Check the registrations with:
 

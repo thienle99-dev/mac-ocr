@@ -10,7 +10,7 @@ Install the CLI and register the MCP server for Claude Code, Codex, and OpenCode
 curl -fsSL https://raw.githubusercontent.com/thienle99-dev/mac-ocr/main/install.sh | sh
 ```
 
-The installer downloads the `main` branch to a temporary directory, builds the CLI and MCP server, then installs them under `~/.local/share/mac-ocr`. It creates `~/.local/bin/mac-ocr` and configures all three agents to use the installed server. The install works independently of the temporary checkout.
+The installer finds the latest GitHub Release, downloads its matching source and prebuilt universal Swift binary, verifies the binary checksum, builds the MCP server, and installs everything under `~/.local/share/mac-ocr`. It creates `~/.local/bin/mac-ocr` and configures all three agents to use the installed server. The install works independently of the temporary download.
 
 To update, run the same command again. From a local checkout, use `make install` to build and refresh the installed copy. Both methods update the `mac-ocr` entry while preserving other MCP server entries.
 
@@ -21,7 +21,7 @@ tar -xzf mac-ocr-macos-universal.tar.gz
 install -m 755 mac-ocr "$HOME/.local/bin/mac-ocr"
 ```
 
-Requirements: macOS 12 or later, Swift 6, Node.js 18 or later, pnpm, and the Claude Code, Codex, and OpenCode CLIs. The installer also uses `curl`, `tar`, and `make`. Ensure `~/.local/bin` is on `PATH` to run `mac-ocr` directly.
+The installer downloads a prebuilt universal binary from GitHub Releases and verifies its SHA-256 checksum. It does not require a local Swift toolchain. Requirements are macOS 12 or later, Node.js 18 or later, pnpm, `curl`, `tar`, `shasum`, and the Claude Code, Codex, and OpenCode CLIs. Ensure `~/.local/bin` is on `PATH` to run `mac-ocr` directly. Building from a checkout with `make install` still requires Swift 6.
 
 Check the agent registrations with:
 

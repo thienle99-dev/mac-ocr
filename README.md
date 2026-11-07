@@ -1,50 +1,46 @@
 # mac-ocr
 
-Local OCR for AI agents on macOS. The Swift command line program uses Apple Vision; the MCP server exposes it as an `ocr_image` tool. No OCR model or network service is used at runtime.
+Local OCR for AI agents on macOS. The CLI uses Apple Vision, and the MCP server exposes image, PDF, batch, and screen OCR tools. Recognition runs on-device.
 
-## Requirements
+## Install
 
-- macOS 12 or later
-- Swift 6 toolchain
-- Node.js 18 or later and pnpm
-- Claude Code, Codex CLI, and OpenCode CLI for the one-command agent setup
-- `curl`, `tar`, and `make` for the `curl | sh` installer
-
-## Build
-
-From this directory:
+Install the CLI and register the MCP server for Claude Code, Codex, and OpenCode with one command:
 
 ```sh
-make build
+curl -fsSL https://raw.githubusercontent.com/thienle99-dev/mac-ocr/main/install.sh | sh
 ```
 
-This runs the manual build steps below, using the frozen MCP lockfile:
+The installer downloads the `main` branch to a temporary directory, builds the CLI and MCP server, then installs them under `~/.local/share/mac-ocr`. It creates `~/.local/bin/mac-ocr` and configures all three agents to use the installed server. The install works independently of the temporary checkout.
+
+To update, run the same command again. From a local checkout, use `make install` to build and refresh the installed copy. Both methods update the `mac-ocr` entry while preserving other MCP server entries.
+
+To install only the prebuilt CLI, download the universal macOS binary from [GitHub Releases](https://github.com/thienle99-dev/mac-ocr/releases/latest), then:
 
 ```sh
-swift build -c release
-pnpm --dir mcp install --frozen-lockfile
-pnpm --dir mcp build
+tar -xzf mac-ocr-macos-universal.tar.gz
+install -m 755 mac-ocr "$HOME/.local/bin/mac-ocr"
 ```
 
-The executable is `.build/release/mac-ocr`.
+Requirements: macOS 12 or later, Swift 6, Node.js 18 or later, pnpm, and the Claude Code, Codex, and OpenCode CLIs. The installer also uses `curl`, `tar`, and `make`. Ensure `~/.local/bin` is on `PATH` to run `mac-ocr` directly.
 
-## Test
-
-Run the smoke checks and MCP typecheck with:
+Check the agent registrations with:
 
 ```sh
-make test
+claude mcp get mac-ocr
+codex mcp get mac-ocr
+opencode mcp list
 ```
 
-The manual smoke test command, after `swift build -c release`, is:
+The CLI can reconfigure all agents, or one agent at a time:
 
 ```sh
-bash tests/smoke.sh
+mac-ocr configure
+mac-ocr configure claude
+mac-ocr configure codex
+mac-ocr configure opencode
 ```
 
 ## CLI
-
-The examples below use the installed command. Run `make install` or the `curl | sh` installer first, and ensure `~/.local/bin` is on `PATH`. Before installation, replace `mac-ocr` with `.build/release/mac-ocr`.
 
 ```sh
 mac-ocr ./image.png
@@ -57,32 +53,26 @@ printf '{"paths":["./one.png","./two.png"],"languages":["vi-VN","en-US"],"pixels
 mac-ocr --list-displays
 ```
 
-From a checkout, configure MCP agents with the built CLI:
-
-```sh
-.build/release/mac-ocr configure
-.build/release/mac-ocr configure codex
-```
-
-After installation, run the same command as `mac-ocr configure`; it uses the installed MCP bundle. You can select one agent with `mac-ocr configure claude`, `mac-ocr configure codex`, or `mac-ocr configure opencode`.
-
 Options:
 
-- `--lang`: comma-separated Vision recognition language identifiers. The CLI accepts `vi-VN` as an alias for Vision's `vi-VT` identifier when the latter is available. Supported languages vary by macOS version and recognition level.
-- `--level`: `accurate` (default) or `fast`.
+- `--lang`: comma-separated Vision language identifiers. `vi-VN` aliases Vision's `vi-VT` where available.
+- `--level`: `accurate` (default) or `fast`. Vietnamese always uses accurate to preserve diacritics.
 - `--format`: `json` (default) or `text`.
-- `--pages`: 1-based inclusive PDF page range, such as `1-3`; defaults to all pages.
-- `--screen`: capture the main display and recognize it. Do not provide an image path with this flag. The host app must have Screen Recording permission in System Settings > Privacy & Security > Screen Recording.
-- `--region`: with `--screen`, capture only the `x,y,width,height` rectangle in desktop points; `x` and `y` may be negative.
-- `--display`: with `--screen`, capture a 1-based display index; cannot be combined with `--region`.
-- `--pixels`: return bounding boxes in image pixels with a top-left origin. JSON also includes image `width` and `height` (and per-page dimensions for PDFs).
+- `--pages`: 1-based inclusive PDF range, such as `1-3`; defaults to all pages.
+- `--screen`: capture the main display. Grant Screen Recording permission to the host app.
+- `--region`: screen capture rectangle `x,y,width,height` in desktop points. Origins may be negative; the region must fit within one display.
+- `--display`: select a 1-based display index. Use `--list-displays` to inspect active displays; cannot be combined with `--region`.
+- `--pixels`: return boxes in pixels with a top-left origin. JSON includes image dimensions.
+- `--batch`: read a JSON object from stdin with `paths` (1 to 50 images), and optional `languages`, `level`, and `pixels`. Returns results in input order with per-image errors.
 - `--no-correction`: disable Vision language correction.
 
-**Tips:** Vietnamese automatically uses `accurate`, even when `--level fast` is requested, because fast may drop diacritics. For Vietnamese and English, pass `--lang vi-VN,en-US`.
-
-Image and screenshot JSON output has `text` and `lines`. PDF JSON output has `text` and `pages`, with each page containing its 1-based `page`, `text`, and `lines`. Each line contains recognized `text`, a confidence score, and a normalized `box` (`x`, `y`, `width`, `height`). Coordinates range from 0 to 1, with the origin at the bottom left, matching Vision's coordinate system. Errors are JSON on stderr and return a nonzero exit status.
+Image JSON has `text`, `width`, `height`, and `lines`. PDF JSON has `text` and `pages`, with each page's dimensions and lines. Boxes are normalized from 0 to 1 with a bottom-left origin unless `--pixels` is enabled. Errors are JSON on stderr and return a nonzero exit status.
 
 ## MCP server
+
+The installed server provides `ocr_image`, `ocr_images`, `ocr_pdf`, `ocr_screen`, and `list_displays`. OCR tools accept `pixels: true` to return pixel boxes. Screen results include capture metadata for mapping boxes to desktop coordinates. Batch OCR handles up to 50 paths in one CLI process. OCR processes for the same macOS user share four system lock slots; the default wait limit is 60 seconds.
+
+For a manual server launch from a checkout:
 
 ```sh
 cd mcp
@@ -91,55 +81,25 @@ pnpm build
 pnpm start
 ```
 
-The `ocr_image`, `ocr_images`, `ocr_pdf`, and `ocr_screen` tools accept optional `pixels: true` to return pixel boxes with a top-left origin. Screen results include a `capture` object with display ID, desktop origin, and pixel-to-point scale for mapping boxes to desktop positions. `ocr_images` accepts up to 50 paths and processes them in one CLI process, returning per-image results in input order. `list_displays` reports display IDs, desktop bounds, pixel dimensions, and scale. Screen `region` uses desktop points, may have negative origins, and must fit within one display. Vietnamese always uses accurate recognition. All OCR processes for this user share four system lock slots; waiting for a slot times out after 60 seconds by default. Configure the server with these environment variables:
+Configure the server with these optional environment variables:
 
-- `MAC_OCR_BIN`: path to the binary. The server checks `.build/release/mac-ocr` in the project root first, then searches `PATH` for `mac-ocr`.
-- `MAC_OCR_TIMEOUT_MS`: maximum OCR process time in milliseconds; defaults to `60000`. Values must be positive integers.
-- `MAC_OCR_LANGS`: default comma-separated recognition languages (for example, `vi-VN,en-US`); an explicit `languages` tool argument takes precedence.
-- `MAC_OCR_QUEUE_TIMEOUT_MS`: maximum time to wait for one of the four shared OCR slots; defaults to `60000`.
+- `MAC_OCR_BIN`: CLI path. The server checks the project release binary first, then searches `PATH`.
+- `MAC_OCR_TIMEOUT_MS`: maximum process time in milliseconds; defaults to `60000`.
+- `MAC_OCR_LANGS`: default comma-separated languages, for example `vi-VN,en-US`.
+- `MAC_OCR_QUEUE_TIMEOUT_MS`: maximum wait for a shared OCR slot; defaults to `60000`.
 
-Install once for Claude Code, Codex, and OpenCode:
+## Build and test
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/thienle99-dev/mac-ocr/main/install.sh | sh
-```
-
-The installer requires the GitHub repository to be public. It downloads the `main` branch to a temporary directory, builds the CLI and MCP server, then installs them with runtime dependencies to `~/.local/share/mac-ocr`. It creates `~/.local/bin/mac-ocr` and registers the installed MCP server with all three agents. The installed copy is independent of the temporary download. Ensure `~/.local/bin` is on `PATH` to call `mac-ocr` directly. You can also run `make install` from a checkout.
-
-The installer updates the `mac-ocr` registration for each agent so it points to the same installed copy, and preserves other MCP entries. Run the `curl | sh` command again to update from `main`, or run `make install` after changing a local checkout.
-
-Check the registrations with:
+For development, build from the repository root with:
 
 ```sh
-claude mcp get mac-ocr
-codex mcp get mac-ocr
-opencode mcp list
+make build
 ```
 
-To register only the current checkout manually with Claude Code:
+This builds the Swift CLI and MCP bundle. The local executable is `.build/release/mac-ocr`.
+
+Run the CLI smoke checks, MCP stdio smoke test, and typecheck with:
 
 ```sh
-make register
+make test
 ```
-
-This prints the Claude Code and Codex registration commands for this checkout. The manual Claude Code command is:
-
-```sh
-claude mcp add mac-ocr -- node /absolute/path/to/mac-ocr/mcp/dist/index.js
-```
-
-Register it with Codex:
-
-```sh
-codex mcp add mac-ocr -- node /absolute/path/to/mac-ocr/mcp/dist/index.js
-```
-
-This writes the following entry to `~/.codex/config.toml`, which you can also add by hand:
-
-```toml
-[mcp_servers.mac-ocr]
-command = "node"
-args = ["/absolute/path/to/mac-ocr/mcp/dist/index.js"]
-```
-
-For a checkout based manual launch, build the Swift executable and MCP bundle first. The one-time installation above includes both.
